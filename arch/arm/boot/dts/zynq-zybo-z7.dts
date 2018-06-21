@@ -69,3 +69,16 @@
 	dr_mode = "host";
 	usb-phy = <&usb_phy0>;
 };
+
+&spi1 {
+	//compatible = "rohm,dh2228fv";	//quick and dirty
+	compatible = "xlnx,xps-spi-2.00.a";
+	status = "okay";
+	fifo-size = <64>;
+	
+	spi_slave_dev@0{
+		compatible = "spidev";
+		reg = <0>;
+		spi-max-frequency = <25000000>;
+	};
+};
