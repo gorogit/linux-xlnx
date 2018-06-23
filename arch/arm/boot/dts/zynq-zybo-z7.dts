@@ -72,7 +72,7 @@
 
 &spi1 {
 	//compatible = "rohm,dh2228fv";	//quick and dirty
-	compatible = "xlnx,xps-spi-2.00.a";
+	compatible = "xlnx,zynq-spi-r1p6";
 	status = "okay";
 	fifo-size = <64>;
 	
