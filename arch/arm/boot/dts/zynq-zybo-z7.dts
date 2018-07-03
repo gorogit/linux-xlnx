@@ -73,10 +73,10 @@
 &spi1 {
 	compatible = "xlnx,zynq-spi-r1p6";
 	status = "okay";
-	fifo-size = <64>;
+	oscillator_frequency = <20000000>;
 	
-	spi_slave_dev@0{
-		compatible = "spidev";
+	can2:can@0{
+		compatible = "microchip,mcp2515";
 		reg = <0>;
 		spi-max-frequency = <25000000>;
 	};
