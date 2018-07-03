@@ -78,6 +78,16 @@
 	can2:can@0{
 		compatible = "microchip,mcp2515";
 		reg = <0>;
-		spi-max-frequency = <25000000>;
+		oscillator_frequency = <20000000>;
+		spi-max-frequency = <1000000>;
+		interrupt-parent = <&gpio0>;
+		interrupts = <0 0x2>;	//GPIO0 Pin0 FallingEdge
+
+		//IRQ_TYPE_NONE           = 0x00000000,
+		//IRQ_TYPE_EDGE_RISING    = 0x00000001,
+		//IRQ_TYPE_EDGE_FALLING   = 0x00000002,
+		//IRQ_TYPE_EDGE_BOTH      = (IRQ_TYPE_EDGE_FALLING | IRQ_TYPE_EDGE_RISING),
+		//IRQ_TYPE_LEVEL_HIGH     = 0x00000004,
+		//IRQ_TYPE_LEVEL_LOW      = 0x00000008,
 	};
 };
