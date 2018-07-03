@@ -1035,6 +1035,9 @@ static int mcp251x_can_probe(struct spi_device *spi)
 	int freq, ret;
 
 	clk = devm_clk_get(&spi->dev, NULL);
+#if 1
+	freq = 20000000;	// 20MHz for PmodCAN 2018/7/3  Quick and Dirty
+#else
 	if (IS_ERR(clk)) {
 		if (pdata)
 			freq = pdata->oscillator_frequency;
@@ -1043,6 +1046,7 @@ static int mcp251x_can_probe(struct spi_device *spi)
 	} else {
 		freq = clk_get_rate(clk);
 	}
+#endif
 
 	/* Sanity check */
 	if (freq < 1000000 || freq > 25000000)
