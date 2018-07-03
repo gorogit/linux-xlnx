@@ -71,7 +71,6 @@
 };
 
 &spi1 {
-	//compatible = "rohm,dh2228fv";	//quick and dirty
 	compatible = "xlnx,zynq-spi-r1p6";
 	status = "okay";
 	fifo-size = <64>;
