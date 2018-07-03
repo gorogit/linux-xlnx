@@ -784,6 +784,23 @@ static struct platform_driver cdns_spi_driver = {
 
 module_platform_driver(cdns_spi_driver);
 
+static struct spi_board_info zynq_spi_board_info[] __initdata = {
+	{
+		.modalias = "spidev",
+		.bus_num = 1,
+		.chip_select = 1,
+		.max_speed_hz = 50000000,
+		.mode = SPI_MODE_0,
+
+	},
+};
+
+static int __init cdns_spi_init(void)
+{
+	return spi_register_board_info(zynq_spi_board_info, ARRAY_SIZE(zynq_spi_board_info));
+}
+arch_initcall(cdns_spi_init);
+
 MODULE_AUTHOR("Xilinx, Inc.");
 MODULE_DESCRIPTION("Cadence SPI driver");
 MODULE_LICENSE("GPL");
