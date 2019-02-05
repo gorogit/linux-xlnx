@@ -321,32 +321,40 @@ static void macb_get_hwaddr(struct macb *bp)
 	eth_hw_addr_random(bp->dev);
 }
 
+static int macb_mdio_wait_for_idle(struct macb *bp)
+{
+	ulong timeout;
+
+	timeout = jiffies + msecs_to_jiffies(1000);
+	/* wait for end of transfer */
+	while (1) {
+		if (MACB_BFEXT(IDLE, macb_readl(bp, NSR)))
+			break;
+
+		if (time_after_eq(jiffies, timeout)) {
+			netdev_err(bp->dev, "wait for end of transfer timed out\n");
+			return -ETIMEDOUT;
+		}
+
+		cpu_relax();
+	}
+
+	return 0;
+}
+
 static int macb_mdio_read(struct mii_bus *bus, int mii_id, int regnum)
 {
 	struct macb *bp = bus->priv;
 	int value;
 	int err;
-	ulong timeout;
 
-	err = pm_runtime_get_sync(&bp->pdev->dev);
+	if (pm_runtime_status_suspended(&bp->pdev->dev) &&
+	    !device_may_wakeup(&bp->dev->dev))
+		return -EAGAIN;
+
+	err = macb_mdio_wait_for_idle(bp);
 	if (err < 0)
 		return err;
-
-	timeout = jiffies + msecs_to_jiffies(1000);
-	/* wait for end of transfer */
-	do {
-		if (MACB_BFEXT(IDLE, macb_readl(bp, NSR)))
-			break;
-
-		cpu_relax();
-	} while (!time_after_eq(jiffies, timeout));
-
-	if (time_after_eq(jiffies, timeout)) {
-		netdev_err(bp->dev, "wait for end of transfer timed out\n");
-		pm_runtime_mark_last_busy(&bp->pdev->dev);
-		pm_runtime_put_autosuspend(&bp->pdev->dev);
-		return -ETIMEDOUT;
-	}
 
 	macb_writel(bp, MAN, (MACB_BF(SOF, MACB_MAN_SOF)
 			      | MACB_BF(RW, MACB_MAN_READ)
@@ -354,26 +362,12 @@ static int macb_mdio_read(struct mii_bus *bus, int mii_id, int regnum)
 			      | MACB_BF(REGA, regnum)
 			      | MACB_BF(CODE, MACB_MAN_CODE)));
 
-	timeout = jiffies + msecs_to_jiffies(1000);
-	/* wait for end of transfer */
-	do {
-		if (MACB_BFEXT(IDLE, macb_readl(bp, NSR)))
-			break;
-
-		cpu_relax();
-	} while (!time_after_eq(jiffies, timeout));
-
-	if (time_after_eq(jiffies, timeout)) {
-		netdev_err(bp->dev, "wait for end of transfer timed out\n");
-		pm_runtime_mark_last_busy(&bp->pdev->dev);
-		pm_runtime_put_autosuspend(&bp->pdev->dev);
-		return -ETIMEDOUT;
-	}
+	err = macb_mdio_wait_for_idle(bp);
+	if (err < 0)
+		return err;
 
 	value = MACB_BFEXT(DATA, macb_readl(bp, MAN));
 
-	pm_runtime_mark_last_busy(&bp->pdev->dev);
-	pm_runtime_put_autosuspend(&bp->pdev->dev);
 	return value;
 }
 
@@ -382,27 +376,14 @@ static int macb_mdio_write(struct mii_bus *bus, int mii_id, int regnum,
 {
 	struct macb *bp = bus->priv;
 	int err;
-	ulong timeout;
 
-	err = pm_runtime_get_sync(&bp->pdev->dev);
+	if (pm_runtime_status_suspended(&bp->pdev->dev) &&
+	    !device_may_wakeup(&bp->dev->dev))
+		return -EAGAIN;
+
+	err = macb_mdio_wait_for_idle(bp);
 	if (err < 0)
 		return err;
-
-	timeout = jiffies + msecs_to_jiffies(1000);
-	/* wait for end of transfer */
-	do {
-		if (MACB_BFEXT(IDLE, macb_readl(bp, NSR)))
-			break;
-
-		cpu_relax();
-	} while (!time_after_eq(jiffies, timeout));
-
-	if (time_after_eq(jiffies, timeout)) {
-		netdev_err(bp->dev, "wait for end of transfer timed out\n");
-		pm_runtime_mark_last_busy(&bp->pdev->dev);
-		pm_runtime_put_autosuspend(&bp->pdev->dev);
-		return -ETIMEDOUT;
-	}
 
 	macb_writel(bp, MAN, (MACB_BF(SOF, MACB_MAN_SOF)
 			      | MACB_BF(RW, MACB_MAN_WRITE)
@@ -411,24 +392,10 @@ static int macb_mdio_write(struct mii_bus *bus, int mii_id, int regnum,
 			      | MACB_BF(CODE, MACB_MAN_CODE)
 			      | MACB_BF(DATA, value)));
 
-	timeout = jiffies + msecs_to_jiffies(1000);
-	/* wait for end of transfer */
-	do {
-		if (MACB_BFEXT(IDLE, macb_readl(bp, NSR)))
-			break;
+	err = macb_mdio_wait_for_idle(bp);
+	if (err < 0)
+		return err;
 
-		cpu_relax();
-	} while (!time_after_eq(jiffies, timeout));
-
-	if (time_after_eq(jiffies, timeout)) {
-		netdev_err(bp->dev, "wait for end of transfer timed out\n");
-		pm_runtime_mark_last_busy(&bp->pdev->dev);
-		pm_runtime_put_autosuspend(&bp->pdev->dev);
-		return -ETIMEDOUT;
-	}
-
-	pm_runtime_mark_last_busy(&bp->pdev->dev);
-	pm_runtime_put_autosuspend(&bp->pdev->dev);
 	return 0;
 }
 
@@ -635,7 +602,7 @@ static int macb_mii_init(struct macb *bp)
 		of_node_put(mdio_np);
 		err = of_mdiobus_register(bp->mii_bus, mdio_np);
 		if (err)
-			goto err_out_unregister_bus;
+			goto err_out_free_mdiobus;
 	} else if (np) {
 		/* try dt phy registration */
 		err = of_mdiobus_register(bp->mii_bus, np);
@@ -958,7 +925,6 @@ static void gem_rx_refill(struct macb *bp)
 		/* Make hw descriptor updates visible to CPU */
 		rmb();
 
-		bp->rx_prepared_head++;
 		desc = macb_rx_desc(bp, entry);
 
 		if (!bp->rx_skbuff[entry]) {
@@ -992,6 +958,7 @@ static void gem_rx_refill(struct macb *bp)
 			desc->addr &= ~MACB_BIT(RX_USED);
 			desc->ctrl = 0;
 		}
+		bp->rx_prepared_head++;
 	}
 
 	/* Make descriptor updates visible to hardware */
@@ -1758,7 +1725,7 @@ static int macb_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	unsigned long flags;
 	unsigned int desc_cnt, nr_frags, frag_size, f;
 	unsigned int hdrlen;
-	bool is_lso, is_udp = 0;
+	bool is_lso, is_udp = false;
 
 	is_lso = (skb_shinfo(skb)->gso_size != 0);
 
@@ -3766,10 +3733,9 @@ static int macb_probe(struct platform_device *pdev)
 		err = of_phy_register_fixed_link(np);
 		if (err < 0) {
 			dev_err(&pdev->dev, "broken fixed-link specification");
-			goto failed_phy;
+			goto err_out_free_netdev;
 		}
 		phy_node = of_node_get(np);
-		bp->phy_node = phy_node;
 	} else {
 		int gpio = of_get_named_gpio(phy_node, "reset-gpios", 0);
 		if (gpio_is_valid(gpio)) {
@@ -3777,6 +3743,7 @@ static int macb_probe(struct platform_device *pdev)
 			gpiod_direction_output(bp->reset_gpio, 1);
 		}
 	}
+	bp->phy_node = phy_node;
 
 	err = of_get_phy_mode(np);
 	if (err < 0) {
@@ -3794,7 +3761,7 @@ static int macb_probe(struct platform_device *pdev)
 	/* IP specific init */
 	err = init(pdev);
 	if (err)
-		goto err_out_free_netdev;
+		goto err_out_phy_put;
 
 	err = register_netdev(dev);
 	if (err) {
@@ -3828,11 +3795,11 @@ static int macb_probe(struct platform_device *pdev)
 err_out_unregister_netdev:
 	unregister_netdev(dev);
 
+err_out_phy_put:
+	of_node_put(bp->phy_node);
+
 err_out_free_netdev:
 	free_netdev(dev);
-
-failed_phy:
-	of_node_put(phy_node);
 
 err_disable_clocks:
 	clk_disable_unprepare(tx_clk);
@@ -3940,7 +3907,6 @@ static int __maybe_unused macb_suspend(struct device *dev)
 		spin_unlock_irqrestore(&bp->lock, flags);
 	}
 
-	netif_carrier_off(netdev);
 	if (bp->ptp_info)
 		bp->ptp_info->ptp_remove(netdev);
 	pm_runtime_force_suspend(dev);
@@ -3975,8 +3941,8 @@ static int __maybe_unused macb_resume(struct device *dev)
 	} else {
 		macb_writel(bp, NCR, MACB_BIT(MPE));
 		napi_enable(&bp->napi);
-		netif_carrier_on(netdev);
 		phy_resume(bp->phy_dev);
+		phy_init_hw(bp->phy_dev);
 		phy_start(bp->phy_dev);
 	}
 
